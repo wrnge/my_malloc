@@ -6,17 +6,13 @@
 
 #include "MemPool.h"  // 注释这行比较系统malloc与memory pool的性能
 
-#define ENABLE_SHOW // 开启ENABLE_SHOW输出内部信息 会极大的影响性能
-
-// HARD_MODE模式更接近随机分配释放内存的情景, 测试代码Total Usage Size输出失效.
-// #define HARD_MODE
+// #define ENABLE_SHOW // 开启ENABLE_SHOW输出内部信息 会影响性能
 
 /* -------- 测试数据参数 -------- */
 #define MAX_MEM_SIZE (2 * GB)   // 内存池管理的每个内存块大小
-#define MEM_SIZE (0.3 * GB)     // 内存池管理的每个内存块大小
+#define MEM_SIZE (0.4 * GB)     // 内存池管理的每个内存块大小
 #define DATA_N (50000)           // 数据条数
 #define DATA_MAX_SIZE (16 * KB)  // 每条数据最大尺寸
-#define MAX_N (3)               // 总测试次数
 /* -------- 测试数据参数 -------- */
 
 #ifdef MYMALLOC
@@ -32,7 +28,7 @@
 
 #define SHOW(x, mp)                                                       \
     do {                                                                  \
-        printf("============ Thread No. %lu ============\n",                         \
+        printf("\n============ Thread No. %lu ============\n",                         \
                ((unsigned long) pthread_self() % 100));                           \
         mem_size_t mlist_cnt = 0, free_cnt = 0, alloc_cnt = 0;            \
         printf("-> %s\n->> Memory Usage: %.4lf\n->> Memory Usage(prog): " \
@@ -44,7 +40,7 @@
         printf("->> [memorypool_list_count] mlist(%llu)\n", mlist_cnt);   \
         _MP_Memory* mlist = mp->mlist;                                    \
         while (mlist) {                                                   \
-            get_memory_info(mp, mlist, &free_cnt, &alloc_cnt);            \
+            get_memory_info(mp, mlist, &free_cnt, &alloc_cnt);            \                                                    
             printf("->>> id: %d [list_count] free_list(%llu)  "           \
                    "alloc_list(%llu)\n",                                  \
                    get_memory_id(mlist),                                  \
@@ -91,6 +87,8 @@ void* test_fn(void* arg) {
     pthread_mutex_unlock(&mutex);
 #endif
 
+    printf("============ Thread No. %lu: Allocing Begins ============\n",                       
+            ((unsigned long) pthread_self() % 100));
     for (int i = 0; i < DATA_N; ++i) {
         cur_size = random_uint(DATA_MAX_SIZE);
         cur_total_size += cur_size;
@@ -103,27 +101,9 @@ void* test_fn(void* arg) {
         *(int*) mem[i].data = 123;
     }
     // 排序进一步打乱内存释放顺序 模拟实际中随机释放内存
-    printf("\n========Thread No. %lu Sorting Data Array========\n\n\n",
+    printf("\n========Thread No. %lu: Sorting Data Array========\n",
             ((unsigned long) pthread_self() % 100));
     std::sort(mem, mem + DATA_N);
-
-#ifdef HARD_MODE
-    // 释放前一半管理的内存
-    for (int i = 0; i < DATA_N / 2; ++i) My_Free(mem[i].data);
-    // 重新分配前一半的内存
-    for (int i = 0; i < DATA_N / 2; ++i) {
-        cur_size = random_uint(DATA_MAX_SIZE);
-        cur_total_size += cur_size;
-        mem[i].data = (char*) My_Malloc(cur_size);
-        if (mem[i].data == NULL) {
-            printf("Memory overflow!\n");
-            exit(0);
-        }
-        mem[i].size = cur_size;
-        *(int*) mem[i].data = 456;
-    }
-    std::sort(mem, mem + DATA_N);
-#endif
 
 #if (defined MYMALLOC) && (defined ENABLE_SHOW)
     pthread_mutex_lock(&mutex);
@@ -131,6 +111,8 @@ void* test_fn(void* arg) {
     pthread_mutex_unlock(&mutex);
 #endif
 
+    printf("============ Thread No. %lu: Freeing Begins ============\n",                       
+            ((unsigned long) pthread_self() % 100));
     for (int i = 0; i < DATA_N; ++i) {
         // printf("%d ", *(int *)mem[i].data);
         My_Free(mem[i].data);
@@ -143,10 +125,14 @@ void* test_fn(void* arg) {
 #ifdef MYMALLOC  // 统计信息
 #ifdef ENABLE_SHOW
     SHOW("Free After: ", mp);
+
+printf("============ Thread No. %lu: Memory Usage ============\n",                       
+            ((unsigned long) pthread_self() % 100));
 #endif
     printf("Memory Pool Size: %.4lf MB\n",
-           (double) mp->total_mem_pool_size / 1024 / 1024);
+           (double) mp->total_pool_size / 1024 / 1024);
 #endif
+
     printf("Total Usage Size: %.4lf MB\n", (double) total_size / 1024 / 1024);
 
     pthread_mutex_unlock(&mutex);
@@ -159,7 +145,7 @@ int main() {
     double total_time;
     start = clock();
 
-#ifndef MYMALLOC  // 区分系统malloc和内存池实现
+#ifndef MYMALLOC  // 比较系统malloc和内存池的性能
     printf("System malloc:\n");
 #else
     printf("Memory Pool:\n");
